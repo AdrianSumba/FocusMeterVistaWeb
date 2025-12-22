@@ -1,3 +1,10 @@
-# Requiere Python 3.10
-# Requerimientos para interfaz web
-streamlit
+streamlit>=1.32.0
+opencv-python-headless
+numpy
+pandas
+ultralytics
+Pillow
+scikit-learn
+matplotlib
+seaborn
+pymongo
