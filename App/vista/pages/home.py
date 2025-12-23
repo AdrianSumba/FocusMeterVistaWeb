@@ -1,5 +1,6 @@
 import streamlit as st
 from PIL import Image
+from db.mongo import get_mongo_client
 
 st.set_page_config(
     page_title="Sistema de Atención Estudiantil",
@@ -54,7 +55,6 @@ st.write("Ing. Lorena Calle")
 
 
 # ===== CONEXIÓN A MONGODB =====
-from App.db.mongo import get_mongo_client
 
 st.markdown("---")
 st.subheader("🗄️ Estado de la Base de Datos")
