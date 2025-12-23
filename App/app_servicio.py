@@ -68,6 +68,9 @@ if start:
 
         atentos = 0
         total = len(boxes)
+        print(f"\nTotal cajas:{total}")
+        import time
+        time.sleep(1)
 
         for box in boxes:
             x1, y1, x2, y2 = map(int, box.xyxy[0])
