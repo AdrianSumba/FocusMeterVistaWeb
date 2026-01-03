@@ -5,105 +5,113 @@ from ultralytics import YOLO
 import time
 
 # =============================
-# PROCESADOR OPTIMIZADO
+# PROCESADOR PERSISTENTE (HILO ÚNICO)
 # =============================
-class VideoProcessor:
+class BackgroundMonitor:
     def __init__(self, index):
         self.cap = cv2.VideoCapture(index, cv2.CAP_V4L2)
-        # Reducimos resolución para ganar mucha velocidad y bajar CPU
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         
         self.model = YOLO("app/extras/best.pt")
         self.frame = None
         self.nivel_atencion = 0
-        self.running = False
+        self.is_analyzing = True # Siempre analizando
         self.lock = threading.Lock()
-
-    def start(self):
-        if not self.running:
-            self.running = True
-            self.thread = threading.Thread(target=self.update, daemon=True)
-            self.thread.start()
-
-    def stop(self):
-        self.running = False
+        
+        # Iniciar el hilo inmediatamente al crear el objeto
+        self.thread = threading.Thread(target=self.update, daemon=True)
+        self.thread.start()
 
     def update(self):
-        # Limitamos la cámara a 20-25 FPS (suficiente para monitoreo)
-        target_fps = 20 
-        frame_time = 1.0 / target_fps
-        
-        while self.running:
+        while self.is_analyzing:
             start_time = time.time()
-            
             ret, frame = self.cap.read()
-            if not ret: break
+            if not ret:
+                time.sleep(1) # Reintento si falla la cámara
+                continue
 
-            # INFERENCIA (Solo si es necesario)
+            # --- ESTO CORRE SIEMPRE EN EL SERVIDOR ---
             results = self.model(frame, conf=0.5, verbose=False)
             
-            # Usamos el método más eficiente para anotar
-            annotated_frame = results[0].plot()
-
-            # Lógica de atención simplificada
+            # Lógica de atención
             boxes = results[0].boxes
             total = len(boxes)
             atentos = sum(1 for b in boxes if self.model.names[int(b.cls[0])].lower() in ["atento", "attentive"])
             
-            with self.lock:
-                self.frame = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
-                self.nivel_atencion = atentos / total if total > 0 else 0
+            actual_nivel = atentos / total if total > 0 else 0
 
-            # --- FRENO DE CPU ---
-            # Calcula cuánto tiempo dormir para mantener los FPS objetivo
-            elapsed = time.time() - start_time
-            sleep_time = max(0, frame_time - elapsed)
-            time.sleep(sleep_time)
+            # AQUÍ IRÍA TU LÓGICA DE BASE DE DATOS (ej. MongoDB)
+            # self.save_to_db(actual_nivel)
+
+            with self.lock:
+                self.nivel_atencion = actual_nivel
+                # Solo procesamos la imagen si es necesario para ahorrar CPU
+                # pero el cálculo del nivel ya se hizo arriba.
+                self.frame = cv2.cvtColor(results[0].plot(), cv2.COLOR_BGR2RGB)
+
+            # Control de FPS para no saturar el servidor (20 FPS)
+            time.sleep(max(0, 0.05 - (time.time() - start_time)))
 
 # =============================
-# VISTA STREAMLIT OPTIMIZADA
+# INICIALIZACIÓN (SOLO UNA VEZ)
 # =============================
 @st.cache_resource
-def get_processor():
+def start_persistent_monitor():
+    # Intentar índices 2 y 0
     for idx in [2, 0]:
-        test_cap = cv2.VideoCapture(idx, cv2.CAP_V4L2)
-        if test_cap.isOpened():
-            test_cap.release()
-            return VideoProcessor(idx)
+        cap = cv2.VideoCapture(idx, cv2.CAP_V4L2)
+        if cap.isOpened():
+            cap.release()
+            return BackgroundMonitor(idx)
     return None
 
-st.title("📹 Monitoreo Eficiente")
-processor = get_processor()
+# El monitor se inicia en cuanto arranca Streamlit, sin esperar botones
+monitor = start_persistent_monitor()
 
-if "monitoring" not in st.session_state:
-    st.session_state.monitoring = False
+# =============================
+# INTERFAZ DE VISTA (STREAMLIT)
+# =============================
+st.title("📹 Sistema de Monitoreo Persistente")
+
+if "show_view" not in st.session_state:
+    st.session_state.show_view = False
 
 col1, col2 = st.columns(2)
-if col1.button("▶️ Iniciar"):
-    st.session_state.monitoring = True
-    processor.start()
-if col2.button("⏹️ Detener"):
-    st.session_state.monitoring = False
-    processor.stop()
 
+# Los botones ahora solo controlan la VISTA, no el PROCESAMIENTO
+if col1.button("👁️ Ver Monitoreo"):
+    st.session_state.show_view = True
+
+if col2.button("🚫 Ocultar Vista"):
+    st.session_state.show_view = False
+
+# Espacios para la interfaz
 frame_window = st.image([])
 semaforo = st.empty()
+info_status = st.sidebar.empty()
 
-# Loop de visualización con frecuencia controlada
-if st.session_state.monitoring:
-    while st.session_state.monitoring:
-        with processor.lock:
-            img = processor.frame
-            nivel = processor.nivel_atencion
+# Mostrar estado permanente en la barra lateral
+with info_status.container():
+    st.write("🛰️ **Estado del Servidor:** Ejecutando análisis")
+    with monitor.lock:
+        st.metric("Nivel Actual", f"{monitor.nivel_atencion:.0%}")
+
+# --- LÓGICA DE VISUALIZACIÓN ---
+if st.session_state.show_view:
+    while st.session_state.show_view:
+        with monitor.lock:
+            img = monitor.frame
+            nivel = monitor.nivel_atencion
 
         if img is not None:
             frame_window.image(img, use_container_width=True)
-            # Actualizar semáforo solo si hay cambio significativo (opcional)
-            if nivel >= 0.7: semaforo.success(f"🟢 Nivel: {nivel:.0%}")
-            elif nivel >= 0.4: semaforo.warning(f"🟡 Nivel: {nivel:.0%}")
-            else: semaforo.error(f"🔴 Nivel: {nivel:.0%}")
+            
+            if nivel >= 0.7: semaforo.success(f"🟢 Atención Alta: {nivel:.0%}")
+            elif nivel >= 0.4: semaforo.warning(f"🟡 Atención Media: {nivel:.0%}")
+            else: semaforo.error(f"🔴 Atención Baja: {nivel:.0%}")
         
-        # EL SECRETO: Dormir el hilo de Streamlit
-        # No necesitamos actualizar la web a más de 15-20 veces por segundo
-        time.sleep(0.05)
+        time.sleep(0.05) # Freno para la interfaz web
+else:
+    frame_window.empty()
+    semaforo.info("Análisis en segundo plano activo. Presiona 'Ver Monitoreo' para visualizar.")
