@@ -1,10 +1,40 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
-  <title>Streaming Atención</title>
-  <link rel="stylesheet" href="styles.css">
+    <meta charset="UTF-8">
+    <title>Streaming Optimizado - FocusMeter</title>
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <img src="http://localhost:8000/stream" />
+    <div class="container">
+        <img id="videoStream" src="" alt="Cargando streaming..." />
+        <div id="status">Conectando al servidor...</div>
+    </div>
+
+    <script>
+        const img = document.getElementById('videoStream');
+        const status = document.getElementById('status');
+        const streamUrl = "http://localhost:8000/stream";
+
+        function updateFrame() {
+            const nextFrame = new Image();
+            nextFrame.src = streamUrl + "?t=" + new Date().getTime();
+            
+            nextFrame.onload = function() {
+                img.src = this.src;
+                status.innerText = "En vivo - Sistema Estable";
+                status.style.color = "#00ff00";
+                setTimeout(updateFrame, 40); 
+            };
+
+            nextFrame.onerror = function() {
+                status.innerText = "Error de conexión - Reintentando...";
+                status.style.color = "#ff0000";
+                setTimeout(updateFrame, 1000);
+            };
+        }
+
+        updateFrame();
+    </script>
 </body>
 </html>
