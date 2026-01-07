@@ -2,29 +2,51 @@ import cv2
 import time
 import traceback
 import torch
+import sys
+import os
+from datetime import datetime
 from ultralytics import YOLO
 
 from servicio.camara import open_rtsp
 from servicio.estado_compartido import STATE
 from servicio.com_serial import SerialManager
-from bd.mongo import insertar_registro_atencion
-from bd.modelo import RegistroAtencion
+from bd.mongo import insertar_registro_atencion, get_info_horario_actual, ID_AULA
 
 
+# =======================
+# CONFIGURACIÓN
+# =======================
 MODEL_PATH = "servicio/modelo/best.pt"
 
-RTSP_READ_TIMEOUT = 2.0     # segundos
-RECONNECT_DELAY = 1.0
-MAX_FPS_DELAY = 0.03        # ~30 FPS
-CUDA_CLEAN_INTERVAL = 100   # frames
+RTSP_READ_TIMEOUT = 2.0
+RECONNECT_DELAY = 1.5
+MAX_FPS_DELAY = 0.03
+CUDA_CLEAN_INTERVAL = 150
+STREAM_RES = (640, 480)
 
-ETIQUETAS_MODELO = ["Attentive", "Distracted", "Sleepy", "bullying", "daydreaming", "hand_rising", "human", "phone_use"]
+EVIDENCIAS_PATH = "extras/evidencias"
+os.makedirs(EVIDENCIAS_PATH, exist_ok=True)
+
+# Pesos científicos de atención
+PESOS_ATENCION = {
+    "attentive": 1.0,
+    "hand_rising": 1.0,
+    "human": 0.5,
+    "daydreaming": 0.3,
+    "distracted": 0.0,
+    "sleepy": 0.0,
+    "bullying": 0.0,
+    "phone_use": 0.0
+}
+
+info_horario_actual = None
+hora_nueva_clase = None
 
 
+# =======================
+# RTSP SAFE READ (NO TOCAR)
+# =======================
 def safe_rtsp_read(cap, timeout=RTSP_READ_TIMEOUT):
-    """
-    Evita bloqueo infinito de cap.read()
-    """
     start = time.time()
     while time.time() - start < timeout:
         ret, frame = cap.read()
@@ -34,140 +56,209 @@ def safe_rtsp_read(cap, timeout=RTSP_READ_TIMEOUT):
     return False, None
 
 
+# =======================
+# LOOP PRINCIPAL
+# =======================
 def start_model_loop():
-    print("[INIT] Iniciando loop del modelo")
+    global hora_nueva_clase, info_horario_actual
+
+    print("[INIT] Iniciando modelo RTSP")
+
+    # =======================
+    # CARGA INICIAL DE HORARIO
+    # =======================
+    ahora_dt = datetime.now()
+    hora_nueva_clase = ahora_dt.strftime("%H:00")
+    info_horario_actual = get_info_horario_actual(ID_AULA)
+
+    if info_horario_actual:
+        with STATE.lock:
+            STATE.metrics.update({
+                "aula": info_horario_actual.get("aula", ""),
+                "docente": info_horario_actual.get("docente", ""),
+                "materia": info_horario_actual.get("materia", ""),
+                "carrera": info_horario_actual.get("carrera", ""),
+                "hora_inicio": info_horario_actual.get("hora_inicio", ""),
+                "hora_fin": info_horario_actual.get("hora_fin", "")
+            })
 
     try:
         model = YOLO(MODEL_PATH)
         class_names = model.names
         print("[INIT] Modelo YOLO cargado")
     except Exception:
-        print("[ERROR] Fallo cargando modelo YOLO")
         traceback.print_exc()
         return
 
     cap = None
     serial_mgr = SerialManager()
-
     frame_count = 0
+
+    start_time_interval = time.time()
+    interval_data = {
+        "estudiantes_list": [],
+        "atencion_list": [],
+        "etiquetas_conteos": {},
+        "inicio_fecha": "",
+        "inicio_hora": ""
+    }
 
     while True:
         try:
+            ahora_dt = datetime.now()
+            hora_actual_str = ahora_dt.strftime("%H:00")
+
+            # =======================
+            # ACTUALIZACIÓN HORARIA
+            # =======================
+            if hora_actual_str != hora_nueva_clase:
+                info_horario_actual = get_info_horario_actual(ID_AULA)
+                hora_nueva_clase = hora_actual_str
+
+                if info_horario_actual:
+                    with STATE.lock:
+                        STATE.metrics.update({
+                            "aula": info_horario_actual.get("aula", ""),
+                            "docente": info_horario_actual.get("docente", ""),
+                            "materia": info_horario_actual.get("materia", ""),
+                            "carrera": info_horario_actual.get("carrera", ""),
+                            "hora_inicio": info_horario_actual.get("hora_inicio", ""),
+                            "hora_fin": info_horario_actual.get("hora_fin", "")
+                        })
+
             # =======================
             # RTSP
             # =======================
             if cap is None:
-                print("[RTSP] Abriendo conexión RTSP...")
+                print("[RTSP] Conectando...")
                 cap = open_rtsp()
-                print("[RTSP] Conexión RTSP OK")
+                interval_data["inicio_fecha"] = ahora_dt.strftime("%Y-%m-%d")
+                interval_data["inicio_hora"] = ahora_dt.strftime("%H:%M:%S")
 
-            print("[RTSP] Leyendo frame...")
             ret, frame = safe_rtsp_read(cap)
-
             if not ret:
-                print("[RTSP] Timeout leyendo frame. Reconectando...")
+                print("[RTSP] Timeout, reconectando...")
                 cap.release()
                 cap = None
                 time.sleep(RECONNECT_DELAY)
                 continue
 
             # =======================
-            # MODELO
+            # INFERENCIA
             # =======================
-            print("[MODEL] Ejecutando inferencia...")
-            results = model(frame, conf=0.5)
+            results = model(frame, conf=0.5, verbose=False)
             boxes = results[0].boxes
-            print(f"[MODEL] Boxes detectados: {len(boxes)}")
 
-            total = len(boxes)
-            atencion_acumulada = 0
+            total_detectados = len(boxes)
+            suma_ponderada = 0.0
+            conteo_frame = {}
 
-            etiquetas_detectadas = []
             for box in boxes:
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
                 cls = int(box.cls[0])
-                conf = float(box.conf[0])
                 label = class_names[cls].lower()
 
-                porcentaje = conf * 100
-                atencion_acumulada += porcentaje
+                conteo_frame[label] = conteo_frame.get(label, 0) + 1
 
-                color = (0, 255, 0) if label in ["atento", "attentive"] else (0, 0, 255)
+                peso = PESOS_ATENCION.get(label, 0.0)
+                suma_ponderada += peso
+
+                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                color = (0, 255, 0) if peso >= 0.7 else (255, 255, 0) if peso >= 0.3 else (0, 0, 255)
 
                 cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
                 cv2.putText(
                     frame,
-                    f"{label} {porcentaje:.1f}%",
-                    (x1, y1 - 10),
+                    label,
+                    (x1, y1 - 5),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6,
+                    0.5,
                     color,
-                    2,
+                    1
                 )
 
-                etiquetas_detectadas.add("")
+            estimacion_iap = (suma_ponderada / total_detectados * 100) if total_detectados > 0 else 0
 
-            estimacion = (atencion_acumulada / total) if total else 0
+            # =======================
+            # ACUMULADORES POR MINUTO
+            # =======================
+            interval_data["estudiantes_list"].append(total_detectados)
+            interval_data["atencion_list"].append(estimacion_iap)
+
+            for lab, cant in conteo_frame.items():
+                interval_data["etiquetas_conteos"].setdefault(lab, []).append(cant)
 
             # =======================
             # STATE
             # =======================
-            print("[STATE] Actualizando estado compartido")
             with STATE.lock:
-                STATE.last_frame = frame
-                STATE.metrics["estimacion_atencion"] = round(estimacion, 2)
-                STATE.metrics["estudiantes_detectados"] = total
+                STATE.last_frame = cv2.resize(frame, STREAM_RES)
+                STATE.metrics["estimacion_atencion"] = round(estimacion_iap, 2)
+                STATE.metrics["estudiantes_detectados"] = total_detectados
 
             # =======================
             # SERIAL
             # =======================
-            print("[SERIAL] Enviando datos a Arduino")
-            serial_mgr.send(estimacion) 
+            serial_mgr.send(estimacion_iap)
 
-            print(
-                f"[LOOP] OK | Estudiantes: {total} | "
-                f"Estimación: {estimacion:.2f}%"
-            )
+            # =======================
+            # INSERCIÓN + EVIDENCIA CADA MINUTO
+            # =======================
+            if time.time() - start_time_interval >= 60:
+                timestamp = ahora_dt.strftime("%Y%m%d_%H%M%S")
+
+                cv2.putText(
+                    frame,
+                    f"Atencion: {round(estimacion_iap, 2)}% | Estudiantes: {total_detectados}",
+                    (20, 40),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    1,
+                    (255, 255, 255),
+                    2
+                )
+
+                cv2.imwrite(
+                    os.path.join(EVIDENCIAS_PATH, f"evidencia_{timestamp}.jpg"),
+                    frame
+                )
+
+                atencion_prom = sum(interval_data["atencion_list"]) / len(interval_data["atencion_list"])
+                num_est_max = max(interval_data["estudiantes_list"])
+                res_num_det = {k: max(v) for k, v in interval_data["etiquetas_conteos"].items()}
+
+                documento = {
+                    "num_estudiantes_detectados": num_est_max,
+                    "porcentaje_estimado_atencion": round(atencion_prom, 2),
+                    "num_deteccion_etiquetas": res_num_det,
+                    "fecha_deteccion": interval_data["inicio_fecha"],
+                    "hora_detecccion": interval_data["inicio_hora"],
+                    "id_horario": info_horario_actual["id_horario"] if info_horario_actual else ""
+                }
+
+                insertar_registro_atencion(documento)
+
+                start_time_interval = time.time()
+                interval_data = {
+                    "estudiantes_list": [],
+                    "atencion_list": [],
+                    "etiquetas_conteos": {},
+                    "inicio_fecha": ahora_dt.strftime("%Y-%m-%d"),
+                    "inicio_hora": ahora_dt.strftime("%H:%M:%S")
+                }
+
+                sys.stdout.write("\033[H\033[J")
 
             # =======================
             # LIMPIEZA GPU
             # =======================
             frame_count += 1
             if torch.cuda.is_available() and frame_count % CUDA_CLEAN_INTERVAL == 0:
-                print("[CUDA] Liberando cache GPU")
                 torch.cuda.empty_cache()
 
-            # =======================
-            # THROTTLING
-            # =======================
             time.sleep(MAX_FPS_DELAY)
 
-        except Exception as e:
-            print("[ERROR] Excepción capturada en loop principal")
-            print(e)
+        except Exception:
             traceback.print_exc()
-
-            # Reset parcial para recuperación
-            try:
-                if cap:
-                    cap.release()
-            except Exception:
-                pass
-
+            if cap:
+                cap.release()
             cap = None
-            time.sleep(1)
-        
-        try:
-
-            registro = {
-                "num_estudiantes_detectados": total,
-                "porcentaje_estimado_atencion": estimacion,
-                "porcentajes_etiquetas": registro.porcentajes_etiquetas,
-                "num_deteccion_etiquetas": registro.num_deteccion_etiquetas,
-                "fecha_deteccion": registro.fecha_deteccion,
-                "hora_detecccion": registro.hora_detecccion,
-                "id_horario": registro.id_horario
-            }
-            insertar_registro_atencion
-        except:
-            pass
+            time.sleep(RECONNECT_DELAY)
