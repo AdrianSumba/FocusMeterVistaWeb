@@ -17,23 +17,30 @@ def startup():
 
 
 def frame_generator():
-    last_sent_frame = None
     while True:
-        with STATE.lock:
+        with STATE.frame_lock:
             frame = STATE.last_frame
-        
-        if frame is None or frame is last_sent_frame:
+
+        if frame is None:
             time.sleep(0.01)
             continue
 
-        _, jpeg = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
-        last_sent_frame = frame
-        
-        yield (b"--frame\r\n"
-               b"Content-Type: image/jpeg\r\n\r\n" +
-               jpeg.tobytes() + b"\r\n")
-        
-        time.sleep(0.04)
+        ret, jpeg = cv2.imencode(
+            ".jpg",
+            frame,
+            [int(cv2.IMWRITE_JPEG_QUALITY), 80]
+        )
+        if not ret:
+            continue
+
+        yield (
+            b"--frame\r\n"
+            b"Content-Type: image/jpeg\r\n\r\n"
+            + jpeg.tobytes()
+            + b"\r\n"
+        )
+
+        time.sleep(0.02)
 
 
 @app.get("/stream")
@@ -47,6 +54,6 @@ def stream():
 
 @app.get("/metrics")
 def metrics():
-    with STATE.lock:
+    with STATE.metrics_lock:
         data = STATE.metrics.copy()
     return JSONResponse(content=data)

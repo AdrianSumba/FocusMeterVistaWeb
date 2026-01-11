@@ -2,7 +2,9 @@ import threading
 
 class EstadoCompartido:
     def __init__(self):
-        self.lock = threading.Lock()
+        self.frame_lock = threading.Lock()
+        self.metrics_lock = threading.Lock()
+
         self.last_frame = None
         self.metrics = {
             "estimacion_atencion": 0,
