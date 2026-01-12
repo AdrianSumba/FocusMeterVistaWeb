@@ -1,40 +1,44 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <title>Streaming Optimizado - FocusMeter</title>
-    <link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8">
+  <title>Streaming en tiempo real - FocusMeter</title>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div class="container">
-        <img id="videoStream" src="" alt="Cargando streaming..." />
-        <div id="status">Conectando al servidor...</div>
-    </div>
+  <div class="container">
+    <!-- MJPEG: un solo request persistente (fluido y liviano) -->
+    <img id="videoStream" src="http://localhost:8000/stream" alt="Cargando streaming..." />
+    <div id="status">Conectando al servidor...</div>
+  </div>
 
-    <script>
-        const img = document.getElementById('videoStream');
-        const status = document.getElementById('status');
-        const streamUrl = "http://localhost:8000/stream";
+  <script>
+    const img = document.getElementById('videoStream');
+    const status = document.getElementById('status');
 
-        function updateFrame() {
-            const nextFrame = new Image();
-            nextFrame.src = streamUrl + "?t=" + new Date().getTime();
-            
-            nextFrame.onload = function() {
-                img.src = this.src;
-                status.innerText = "En vivo - Sistema Estable";
-                status.style.color = "#00ff00";
-                setTimeout(updateFrame, 40); 
-            };
+    function setOk(){
+      status.innerText = "Streaming activo";
+      status.style.color = "#00ff00";
+    }
 
-            nextFrame.onerror = function() {
-                status.innerText = "Error de conexión - Reintentando...";
-                status.style.color = "#ff0000";
-                setTimeout(updateFrame, 1000);
-            };
-        }
+    function setErr(){
+      status.innerText = "Sin conexión - reintentando...";
+      status.style.color = "#ff0000";
+    }
 
-        updateFrame();
-    </script>
+    // Cuando el navegador logra descargar el primer chunk, suele disparar load.
+    img.addEventListener("load", setOk);
+
+    // Reintento si falla.
+    img.addEventListener("error", () => {
+      setErr();
+      setTimeout(() => {
+        img.src = "http://localhost:8000/stream?t=" + Date.now();
+      }, 1000);
+    });
+
+    // Por defecto, al abrir la página: conectar.
+    setErr();
+  </script>
 </body>
 </html>
