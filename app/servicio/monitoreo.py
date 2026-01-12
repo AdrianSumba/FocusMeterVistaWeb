@@ -82,7 +82,6 @@ class FocusMeterRuntime:
     def start(self):
         print("[INIT] Iniciando FocusMeterRuntime optimizado")
 
-        # Modelo YOLO una sola vez
         self.model, self.class_names = cargar_modelo()
         if self.model is None:
             raise RuntimeError("No se pudo cargar el modelo YOLO")
