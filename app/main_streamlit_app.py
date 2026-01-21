@@ -1,43 +1,31 @@
 import streamlit as st
 
-# =====================
-# CONFIGURACIÓN
-# =====================
+
 st.set_page_config(
     page_title="Focus Meter Web",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded",
 )
 
-# =====================
-# CREDENCIALES QUEMADAS
-# =====================
 USUARIO = "admin"
 PASSWORD = "1234"
 
-# =====================
-# SESSION STATE
-# =====================
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
-# =====================
-# ESTILOS
-# =====================
+
 st.markdown(
     """
     <style>
-        header {
-            visibility: hidden;
-            height: -200px;
-        }
+      #MainMenu {visibility: hidden;}
+      footer {visibility: hidden;}
+      .block-container { padding-top: 1rem; }
     </style>
     """,
     unsafe_allow_html=True
 )
 
-# =====================
-# LOGIN
-# =====================
+
 def login():
     st.title("🔐 Login - Focus Meter")
 
@@ -55,37 +43,31 @@ def login():
             st.error("❌ Usuario o contraseña incorrectos")
 
 
-# =====================
-# LOGOUT
-# =====================
 def logout():
     st.session_state.logged_in = False
     st.rerun()
 
 
-# =====================
-# APP PRINCIPAL
-# =====================
 if not st.session_state.logged_in:
     login()
     st.stop()
 
-# =====================
-# BARRA SUPERIOR
-# =====================
+
 with st.sidebar:
     st.success("🟢 Sesión activa")
-    if st.button("🚪 Cerrar sesión"):
+    if st.button("🚪 Cerrar sesión", use_container_width=True):
         logout()
 
-# =====================
-# NAVEGACIÓN PROTEGIDA
-# =====================
-pg = st.navigation([
-    st.Page("vista/home.py", title="🏠 Home"),
-    st.Page("vista/semaforo.py", title="🚦 Semáforo"),
-    st.Page("vista/estadisticas.py", title="📊 Estadísticas"),
-    st.Page("vista/docs.py", title="📖 Documentación"),
-])
+
+pg = st.navigation(
+    [
+        st.Page("vista/home.py", title="🏠 Home"),
+        st.Page("vista/semaforo.py", title="🚦 Semáforo"),
+        st.Page("vista/estadisticas_actualizables.py", title="📊 Estadísticas"),
+        st.Page("vista/estadisticas_powerbi.py", title="📈 Estadísticas PowerBI"),
+        st.Page("vista/docs.py", title="📖 Documentación"),
+    ],
+    position="sidebar",
+)
 
 pg.run()

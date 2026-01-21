@@ -6,3 +6,6 @@ pyserial
 numpy
 streamlit
 pymongo
+plotly
+pandas
+pillow
