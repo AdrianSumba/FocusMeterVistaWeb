@@ -9,3 +9,4 @@ pymongo
 plotly
 pandas
 pillow
+scikit-learn
