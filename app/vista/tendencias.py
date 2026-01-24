@@ -140,7 +140,7 @@ with k1:
     )
 with k2:
     st.markdown(
-        f"<div class='kpi-wrap'><div class='kpi-val'>{total_est}</div><div class='kpi-lbl'>Estudiantes detectados (suma)</div></div>",
+        f"<div class='kpi-wrap'><div class='kpi-val'>{total_est}</div><div class='kpi-lbl'>Registros analizados por minuto</div></div>",
         unsafe_allow_html=True,
     )
 with k3:

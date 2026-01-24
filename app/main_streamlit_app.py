@@ -67,7 +67,6 @@ pg = st.navigation(
         st.Page("vista/estadisticas_powerbi.py", title="📊 Estadísticas PowerBI"),
         st.Page("vista/tendencias.py", title="📈 Tendencias"),
         st.Page("vista/proyecciones.py", title="🔮 Proyecciones"),
-        st.Page("vista/docs.py", title="📖 Documentación"),
     ],
     position="sidebar",
 )
