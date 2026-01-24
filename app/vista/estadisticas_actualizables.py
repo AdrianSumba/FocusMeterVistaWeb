@@ -267,7 +267,7 @@ with k1:
     )
 with k2:
     st.markdown(
-        f"<div class='kpi-wrap'><div class='kpi-val'>{figs['kpi_total']}</div><div class='kpi-lbl'>Total de registros analizados por minuto</div></div>",
+        f"<div class='kpi-wrap'><div class='kpi-val'>{figs['kpi_total']}</div><div class='kpi-lbl'>Total de etiquetas analizadas</div></div>",
         unsafe_allow_html=True,
     )
 with k3:
