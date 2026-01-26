@@ -7,7 +7,7 @@ if "logged_in" not in st.session_state or not st.session_state.logged_in:
 
 st.title("📊 Estadísticas")
 
-embed_url = "https://app.powerbi.com/view?r=eyJrIjoiYzQxMjJiM2QtMmFjNi00ZWJlLWFiMDQtMThiNzgyZTYxZWY1IiwidCI6IjI1NzM5YzY1LWM3OWYtNDAxYy1iYWIwLWQ3NTVlOTBhNjY2MiIsImMiOjR9"
+embed_url = "https://app.powerbi.com/view?r=eyJrIjoiZmQ4NDkyYmEtYjQ3NC00NzYzLTkyZWItNTE2Nzk0YTRiZjVlIiwidCI6IjI1NzM5YzY1LWM3OWYtNDAxYy1iYWIwLWQ3NTVlOTBhNjY2MiIsImMiOjR9"
 
 with st.spinner("Cargando reporte de Power BI..."):
     components.html(
