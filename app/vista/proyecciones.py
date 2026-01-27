@@ -211,12 +211,12 @@ with st.spinner("Calculando proyección..."):
     k1, k2, k3, k4 = st.columns(4)
     with k1:
         st.markdown(
-            f"<div class='kpi-wrap'><div class='kpi-val'>{_fmt_num(ultimo_real, 2)}</div><div class='kpi-lbl'>Último valor real</div></div>",
+            f"<div class='kpi-wrap'><div class='kpi-val'>{_fmt_num(ultimo_real, 2)}%</div><div class='kpi-lbl'>Último valor real</div></div>",
             unsafe_allow_html=True,
         )
     with k2:
         st.markdown(
-            f"<div class='kpi-wrap'><div class='kpi-val'>{_fmt_num(ultimo_proy, 2)}</div><div class='kpi-lbl'>Último valor proyectado</div></div>",
+            f"<div class='kpi-wrap'><div class='kpi-val'>{_fmt_num(ultimo_proy, 2)}%</div><div class='kpi-lbl'>Último valor proyectado</div></div>",
             unsafe_allow_html=True,
         )
     with k3:

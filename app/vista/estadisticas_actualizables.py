@@ -262,7 +262,7 @@ k1, k2, k3 = st.columns(3)
 
 with k1:
     st.markdown(
-        f"<div class='kpi-wrap'><div class='kpi-val'>{_fmt_num(figs['kpi_promedio'], 2)}</div><div class='kpi-lbl'>Promedio Atención</div></div>",
+        f"<div class='kpi-wrap'><div class='kpi-val'>{_fmt_num(figs['kpi_promedio'], 2)}%</div><div class='kpi-lbl'>Promedio Atención</div></div>",
         unsafe_allow_html=True,
     )
 with k2:
